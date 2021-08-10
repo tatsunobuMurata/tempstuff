@@ -1,0 +1,48 @@
+
+
+index=_internal source=*license_usage.log TERM(type=Usage) earliest=-7d@d latest=@d
+| fields idx, b, st, h, _time, date_wday
+| eval h=if(len(h)=0 OR isnull(h),'(SQUASHED)',h)
+| bin _time span=1d
+| stats sum(b) AS b, dc(h) AS h by st idx date_wday
+| stats avg(b) as avg_b, avg(h) AS Host_Count_per_Day by idx st
+| eval Avg_MB_per_Day=round(avg_b/1024/1024,2)
+| eval Avg_GB_per_Day=round(avg_b/1024/1024/1024,2)
+| eval Avg_MB_per_Host=round(Avg_MB_per_Day/Host_Count_per_Day,2)
+| eval Host_Count_per_Day=round(Host_Count_per_Day,0)
+| rename st AS Sourcetype
+| table idx, Sourcetype, Avg_MB_per_Day, Avg_GB_per_Day, Host_Count_per_Day, Avg_MB_per_Host
+| sort Sourcetype
+
+index="_internal" source="*/metrics.log" group=per_index_thruput
+| eval gb=kb/1024/1024
+| bin span=15m _time
+| stats sum(gb) as true_indexed_gbs_every_15m by series
+
+
+index=_introspection host=*  sourcetype=splunk_resource_usage component=Hostwide earliest=-8d@d latest=-0d@d 
+| eval cpu_busy='data.cpu_system_pct'+'data.cpu_user_pct'
+| bin span=1m _time
+| stats p90(data.normalized_load_avg_1min) as load_avg , p90(cpu_busy) as cpu_busy by host
+
+
+
+(component=PerProcess  index=_introspection sourcetype=splunk_resource_usage) 
+| eval process='data.process', args='data.args', sid='data.search_props.sid', process_class=case((process == "splunk-optimize"),"index service",(((((process == "sh") OR (process == "ksh")) OR (process == "bash")) OR like(process,"python%")) OR (process == "powershell")),"scripted input",(process == "mongod"),"KVStore"), process_class=case(((process == "splunkd") AND ((like(args,"-p %start%") OR like(args,"service")) OR like(args,"%_internal_launch_under_systemd%"))),"splunkd server",((process == "splunkd") AND isnotnull(sid)),"search",((process == "splunkd") AND ((like(args,"fsck%") OR like(args,"recover-metadata%")) OR like(args,"cluster_thing"))),"index service",((process == "splunkd") AND (args == "instrument-resource-usage")),"scripted input",((like(process,"python%") AND like(args,"%/appserver/mrsparkle/root.py%")) OR like(process,"splunkweb")),"Splunk Web",isnotnull(process_class),process_class), process_class=if(isnull(process_class),"other",process_class) 
+| bin _time span=1m 
+| eval pid='data.pid', normalized_pct_cpu='data.normalized_pct_cpu' 
+| stats latest(normalized_pct_cpu) AS resource_usage_dedup latest(process_class) AS process_class by pid, _time 
+| stats sum(resource_usage_dedup) AS resource_usage by _time, process_class 
+| timechart minspan=1m Perc90(resource_usage) AS "Resource Usage" by process_class limit=0 useother=false
+
+| eval process_class=case( 'data.process_type'=="search","search", (role=="sh" AND ('data.process_type'=="process_runner" OR 'data.process_type'=="splunkd_server" OR 'data.process_type'=="splunkd_runner")) OR 'data.process_type'=="search_launcher" OR 'data.process_type'=="kvstore" OR 'data.process_type'=="splunk_web" OR role=="sh", "core services", match('data.process_type',"index") OR 'data.process_type'=="scripted_input" OR role=="idx" OR role=="idm" OR role=="c0m1","data services" ) 
+
+
+
+(data.search_props.sid::* component=PerProcess index=_introspection sourcetype=splunk_resource_usage) 
+| eval pid='data.pid', normalized_pct_cpu='data.normalized_pct_cpu', sid='data.search_props.sid', provenance=if(isnotnull('data.search_props.provenance'),'data.search_props.provenance',"unknown") 
+| bin _time span=10s 
+| stats latest(normalized_pct_cpu) AS resource_usage_dedup by _time, provenance, sid, pid 
+| stats sum(resource_usage_dedup) AS sum_resource_usage by _time, provenance 
+| eval sum_resource_usage=round((sum_resource_usage / 100.0),2) 
+| timechart minspan=10s Median(sum_resource_usage) AS "Median of resource usage" by provenance
