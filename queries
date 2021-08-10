@@ -46,3 +46,27 @@ index=_introspection host=*  sourcetype=splunk_resource_usage component=Hostwide
 | stats sum(resource_usage_dedup) AS sum_resource_usage by _time, provenance 
 | eval sum_resource_usage=round((sum_resource_usage / 100.0),2) 
 | timechart minspan=10s Median(sum_resource_usage) AS "Median of resource usage" by provenance
+
+
+
+
+index=_audit TERM(action=search) sourcetype=audittrail search_id!="'rsa_*" total_run_time>0 earliest=-1d@d latest=-0d@d NOT (TERM(user=cmon_user) TERM(user=internal_monitoring) TERM(user=ops_admin)) 
+| eval user = if(user="n/a", null(), user) 
+| rex field=_raw "[^\_]index=\"?(?<Index>[\_a-zA-Z\-\:]{2,})\"?" max_match=0 
+| rex field=_raw "[^\_]sourcetype=\"?(?<sourcetype>[\_a-zA-Z\-\:]{2,})\"?" max_match=0 
+| eval Index=lower(Index) 
+| rex field=search_id "\'(?P<search_id>.*?)\'" 
+| eval search=if(isnull(savedsearch_name) OR savedsearch_name=="", search, savedsearch_name) 
+| eval search_type=case(match(search_id,"^SummaryDirector_"),"summarization",match(savedsearch_name,"^_ACCELERATE_"),"acceleration",match(search_id,"^((rt_)?scheduler_|alertsmanager_)"),"scheduled",match(search_id,"\\d{10}\\.\\d+(_[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})?$"),"ad hoc",true(),"other") 
+| stats values(sourcetype) as sourcetype, min(_time) as _time, values(user) as user, latest(info) as status, max(total_run_time) as total_run_time, values(Index) as Index , first(search) as search, first(search_type) as search_type, first(apiStartTime) as apiStartTime, first(apiEndTime) as apiEndTime , first(search_et) as search_et, first(search_lt) as search_lt, max(searched_buckets) as searched_buckets, max(scan_count) as scan_count, max(considered_events) as considered_events, max(event_count) as event_count, max(result_count) as result_count, first(exec_time) as exec_time by search_id 
+| bin _time span=1d 
+| stats count p90(total_run_time), avg(total_run_time) by search_type _time
+|eventstats sum(count) as total_per_day by _time
+
+index=_audit earliest=-1d@d latest=-0d@d NOT (TERM(user=cmon_user) TERM(user=internal_monitoring) TERM(user=ops_admin))| bin _time span=1d
+| eval _time = _time+86399 | stats count(sourcetype_count__*) as datatype_* by _time
+| transpose
+|rename column as stypes, "row 1" as searches
+| where stypes!="_time"
+
+
