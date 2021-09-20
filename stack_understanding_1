@@ -80,9 +80,9 @@ index=_audit TERM(action=search) sourcetype=audittrail search_id!="'rsa_*" earli
 | rename eai:* as * 
 | stats values(*) as * by title
 
-<010 - search 6> <share snapshot of the table>
+<010 - search 6 - make sure that you run this with host field containing search heads only> <share snapshot of the table>
 
-index=_introspection sourcetype=splunk_resource_usage component=PerProcess data.search_props.sid::* earliest=-8d@d latest=-0d@d 
+index=_introspection host=sh* sourcetype=splunk_resource_usage component=PerProcess data.search_props.sid::* earliest=-8d@d latest=-0d@d 
 | bin _time span=10s 
 | stats dc(data.search_props.sid) AS distinct_search_count by _time, host 
 | stats sum(distinct_search_count) AS distinct_search_count by _time 
