@@ -1,0 +1,92 @@
+Run these searches under monitoring console app if it is connected to read your indexer data. If not, then run them from search heads.
+
+<001 - IDX tput > <share a screenshot of a line graph>
+
+group=per_Index_thruput index=_internal source="*metrics.log" sourcetype=splunkd earliest=-w@w+1d latest=-w@w+2d
+| eval ingest_pipe=if(isnotnull(ingest_pipe),ingest_pipe,"none")
+| search ingest_pipe=*
+| eval mb=kb/1024
+| timechart minspan=5m per_second(mb) as MBps
+
+
+<002 - license> <share a screenshot of the table>
+index=_internal source=*license* TERM(RolloverSummary) earliest=-8d@d latest=-0d@d 
+| bin _time span=1d 
+| stats latest(b) AS b by slave, pool, _time 
+| timechart span=1d sum(b) AS "volume" fixedrange=true 
+| eval ingestGB_rollover=round((((volume / 1024) / 1024) / 1024),3) 
+| fields - volume | eval _time = _time+86399
+
+<003 - compute-1 - filter it with host=indexers only> <share a screenshot of a line graph>
+
+index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwide earliest=-w@w+1d latest=-w@w+2d
+| eval cpu_busy='data.cpu_system_pct'+'data.cpu_user_pct' 
+| timechart span=5m limit=100 useother=false p90(cpu_busy) as cpu_busy by host
+
+
+<004 - compute-2- filter it with host=indexers only> <share a screenshot of a line graph>
+
+index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwide earliest=-w@w+1d latest=-w@w+2d
+| eval cpu_busy='data.cpu_system_pct'+'data.cpu_user_pct' 
+| timechart span=5m limit=100 useother=false p90(data.normalized_load_avg_1min) as load_avg by host
+
+<005 - search-1> <share a screenshot of the table output, if too big then share the csv export>
+
+index=_audit TERM(action=search) sourcetype=audittrail search_id!="'rsa_*" earliest=-w@w+1d latest=-w@w+2d 
+| eval user = if(user="n/a", null(), user) 
+| rex field=_raw "[^\_]index=\"?(?<Index>[\_a-zA-Z\-\:]{2,})\"?" max_match=0 
+| eval Index=lower(Index) 
+| rex field=search_id "\'(?P<search_id>.*?)\'" 
+| eval search=if(isnull(savedsearch_name) OR savedsearch_name=="", search, savedsearch_name) 
+| eval search_type=case(match(search_id,"^SummaryDirector_"),"summarization",match(savedsearch_name,"^_ACCELERATE_"),"acceleration",match(search_id,"^((rt_)?scheduler_|alertsmanager_)"),"scheduled",match(search_id,"\\d{10}\\.\\d+(_[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})?$"),"ad hoc",true(),"other") 
+| stats min(_time) as _time, values(user) as user, latest(info) as status, max(total_run_time) as total_run_time, values(Index) as Index , first(search) as search, first(search_type) as search_type, values(app) as app, first(apiStartTime) as apiStartTime, first(apiEndTime) as apiEndTime , first(search_et) as search_et, first(search_lt) as search_lt, max(searched_buckets) as searched_buckets, max(scan_count) as scan_count, max(considered_events) as considered_events, max(event_count) as event_count, max(result_count) as result_count, first(exec_time) as exec_time by search_id
+| stats count, p90(total_run_time) by search_type status
+| eventstats sum(count) as total_searches
+
+<006 - search-2> <share a screenshot of the table output, if too big then share the csv export>
+
+index=_audit TERM(action=search) sourcetype=audittrail search_id!="'rsa_*" earliest=-w@w+1d latest=-w@w+2d 
+| eval user = if(user="n/a", null(), user) 
+| rex field=_raw "[^\_]index=\"?(?<Index>[\_a-zA-Z\-\:]{2,})\"?" max_match=0 
+| eval Index=lower(Index) 
+| rex field=search_id "\'(?P<search_id>.*?)\'" 
+| eval search=if(isnull(savedsearch_name) OR savedsearch_name=="", search, savedsearch_name) 
+| eval search_type=case(match(search_id,"^SummaryDirector_"),"summarization",match(savedsearch_name,"^_ACCELERATE_"),"acceleration",match(search_id,"^((rt_)?scheduler_|alertsmanager_)"),"scheduled",match(search_id,"\\d{10}\\.\\d+(_[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})?$"),"ad hoc",true(),"other") 
+| stats min(_time) as _time, values(user) as user, latest(info) as status, max(total_run_time) as total_run_time, values(Index) as Index , first(search) as search, first(search_type) as search_type, values(app) as app, first(apiStartTime) as apiStartTime, first(apiEndTime) as apiEndTime , first(search_et) as search_et, first(search_lt) as search_lt, max(searched_buckets) as searched_buckets, max(scan_count) as scan_count, max(considered_events) as considered_events, max(event_count) as event_count, max(result_count) as result_count, first(exec_time) as exec_time by search_id
+| stats count, p90(total_run_time) by search_type
+| eventstats sum(count) as total_searches
+
+
+<007 - search-3> <share a screenshot of the table output, if too big then share the csv export>
+
+( index=_internal sourcetype=scheduler  (status="completed" OR status="deferred" OR status="skipped")) earliest=-w@w+1d latest=-w@w+2d
+| rex "alert_actions=\"(?P<alert_actions>.*?)\","
+| eventstats count(eval(status=="completed" OR status=="skipped")) AS total_exec_nosplit, count(eval(status=="skipped")) AS skipped_exec_nosplit
+| stats values(total_exec_nosplit) as total_exec_nosplit, values(skipped_exec_nosplit) as skipped_exec_nosplit, values(alert_actions) as alert_actions, values(search_type) as search_type count(eval(status=="completed" OR status=="skipped")) AS total_exec, count(eval(status=="skipped")) AS skipped_exec by app savedsearch_name
+| eval skip_ratio=round(((skipped_exec / total_exec) * 100),2)
+| eval skip_ratio_nosplit=round(((skipped_exec_nosplit / total_exec_nosplit) * 100),2)
+
+<008 - search 4> <share snapshot of the table>
+
+| rest timeout=600 splunk_server=* /servicesNS/-/-/configs/conf-limits
+| rename splunk_server AS instance
+| stats max(base_max_searches) max(max_searches_per_cpu) by instance
+| rename max(*) AS *
+
+<009 - search 5> <share csv output>
+
+| rest splunk_server=local /servicesNS/-/-/saved/searches 
+| fields search title author cron_schedule eai:acl.app eai:acl.sharing dispatch.earliest_time dispatch.latest_time action.summary_index *real*time* 
+| rename eai:* as * 
+| stats values(*) as * by title
+
+<010 - search 6> <share snapshot of the table>
+
+index=_introspection sourcetype=splunk_resource_usage component=PerProcess data.search_props.sid::* earliest=-8d@d latest=-0d@d 
+| bin _time span=10s 
+| stats dc(data.search_props.sid) AS distinct_search_count by _time, host 
+| stats sum(distinct_search_count) AS distinct_search_count by _time 
+| stats avg(distinct_search_count) AS "average_search_concurrency" p90(distinct_search_count) AS "p90_search_concurrency", p99(distinct_search_count) AS "p99_search_concurrency" max(distinct_search_count) AS "max_search_concurrency" 
+| foreach p* av* max*
+[| eval <<FIELD>>=round(<<FIELD>>,1) ]
+
