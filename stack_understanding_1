@@ -89,4 +89,5 @@ index=_introspection host=sh* sourcetype=splunk_resource_usage component=PerProc
 | stats avg(distinct_search_count) AS "average_search_concurrency" p90(distinct_search_count) AS "p90_search_concurrency", p99(distinct_search_count) AS "p99_search_concurrency" max(distinct_search_count) AS "max_search_concurrency" 
 | foreach p* av* max*
 [| eval <<FIELD>>=round(<<FIELD>>,1) ]
+| addcoltotals
 
