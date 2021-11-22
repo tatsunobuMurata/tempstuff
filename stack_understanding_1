@@ -30,6 +30,15 @@ index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwi
 | eval cpu_busy='data.cpu_system_pct'+'data.cpu_user_pct' 
 | timechart span=5m limit=100 useother=false p90(data.normalized_load_avg_1min) as load_avg by host
 
+
+<004 -1 - server info>
+
+| rest timeout=600 splunk_server=*idx* /servicesNS/-/-/server/info 
+| fields splunk_server, numberOfVirtualCores, numberOfCores 
+| eval cpu_core_count = if(isnotnull(numberOfVirtualCores), numberOfVirtualCores, numberOfCores) 
+| eval potentialHTOffAlarm = if(isnotnull(numberOfVirtualCores), "yes", "no")
+
+
 <005 - search-1> <share a screenshot of the table output, if too big then share the csv export>
 
 index=_audit TERM(action=search) sourcetype=audittrail search_id!="'rsa_*" earliest=-w@w+1d latest=-w@w+2d 
