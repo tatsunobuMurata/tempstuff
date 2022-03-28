@@ -23,6 +23,13 @@ index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwi
 | eval cpu_busy='data.cpu_system_pct'+'data.cpu_user_pct' 
 | timechart span=5m limit=100 useother=false p90(cpu_busy) as cpu_busy by host
 
+<003-1 - compute-1 - filter it with host=indexers only> <share a screenshot of a line graph>
+
+index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwide earliest=-w@w+1d latest=-w@w+2d
+| eval cpu_busy='data.cpu_system_pct'+'data.cpu_user_pct' 
+| timechart span=5m limit=100 useother=false p99(cpu_busy) as cpu_busy by host
+
+
 
 <004 - compute-2- filter it with host=indexers only> <share a screenshot of a line graph>
 
