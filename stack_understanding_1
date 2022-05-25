@@ -75,12 +75,16 @@ index=_audit TERM(action=search) sourcetype=audittrail search_id!="'rsa_*" earli
 
 <007 - search-3> <share a screenshot of the table output, if too big then share the csv export>
 
-( index=_internal sourcetype=scheduler  (status="completed" OR status="deferred" OR status="skipped")) earliest=-w@w+1d latest=-w@w+2d
-| rex "alert_actions=\"(?P<alert_actions>.*?)\","
-| eventstats count(eval(status=="completed" OR status=="skipped")) AS total_exec_nosplit, count(eval(status=="skipped")) AS skipped_exec_nosplit
-| stats values(total_exec_nosplit) as total_exec_nosplit, values(skipped_exec_nosplit) as skipped_exec_nosplit, values(alert_actions) as alert_actions, values(search_type) as search_type count(eval(status=="completed" OR status=="skipped")) AS total_exec, count(eval(status=="skipped")) AS skipped_exec by app savedsearch_name
-| eval skip_ratio=round(((skipped_exec / total_exec) * 100),2)
-| eval skip_ratio_nosplit=round(((skipped_exec_nosplit / total_exec_nosplit) * 100),2)
+index=_internal sourcetype=scheduler (status="completed" OR status="skipped" OR status="deferred") earliest=-w@w+1d latest=-w@w+2d
+| eval window_time = if(isnotnull(window_time), window_time, 0) 
+| eval execution_latency = max(dispatch_time - (scheduled_time + window_time), 0) 
+| stats values(search_type) as type, p90(execution_latency) as execution_latency , count(eval(status=="completed" OR status=="skipped")) AS total_exec, count(eval(status=="skipped")) AS skipped_exec by app
+| eval skip_ratio = round(skipped_exec / total_exec * 100, 1)
+| eval execution_latency = round(execution_latency,0)
+| eventstats sum(total_exec) as g_total_exec, sum(skipped_exec) as g_skipped_exec
+| eval g_skip_ratio = round(g_skipped_exec / g_total_exec * 100, 1)
+| fields app, type, g_skip*, g_*, skip*, *
+| sort 0 - skipped_exec
 
 <008 - search 4> <share snapshot of the table>
 
