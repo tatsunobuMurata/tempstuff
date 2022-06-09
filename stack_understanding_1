@@ -2,7 +2,7 @@ Run these searches under monitoring console app if it is connected to read your 
 
 <001 - IDX tput > <share a screenshot of a line graph>
 
-group=per_Index_thruput index=_internal source="*metrics.log" sourcetype=splunkd earliest=-w@w+1d latest=-w@w+2d
+group=per_Index_thruput index=_internal source="*metrics.log" sourcetype=splunkd earliest=-w@w+1d latest=-w@w+6d
 | eval ingest_pipe=if(isnotnull(ingest_pipe),ingest_pipe,"none")
 | search ingest_pipe=*
 | eval mb=kb/1024
@@ -19,13 +19,13 @@ index=_internal source=*license* TERM(RolloverSummary) earliest=-8d@d latest=-0d
 
 <003 - compute-1 - filter it with host=indexers only> <share a screenshot of a line graph>
 
-index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwide earliest=-w@w+1d latest=-w@w+2d
+index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwide earliest=-w@w+1d latest=-w@w+6d
 | eval cpu_busy='data.cpu_system_pct'+'data.cpu_user_pct' 
 | timechart span=5m limit=100 useother=false p90(cpu_busy) as cpu_busy by host
 
 <003-1 - compute-1 - filter it with host=indexers only> <share a screenshot of a line graph>
 
-index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwide earliest=-w@w+1d latest=-w@w+2d
+index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwide earliest=-w@w+1d latest=-w@w+6d
 | eval cpu_busy='data.cpu_system_pct'+'data.cpu_user_pct' 
 | timechart span=5m limit=100 useother=false p99(cpu_busy) as cpu_busy by host
 
@@ -33,7 +33,7 @@ index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwi
 
 <004 - compute-2- filter it with host=indexers only> <share a screenshot of a line graph>
 
-index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwide earliest=-w@w+1d latest=-w@w+2d
+index=_introspection host=idx* sourcetype=splunk_resource_usage component=Hostwide earliest=-w@w+1d latest=-w@w+6d
 | eval cpu_busy='data.cpu_system_pct'+'data.cpu_user_pct' 
 | timechart span=5m limit=100 useother=false p90(data.normalized_load_avg_1min) as load_avg by host
 
