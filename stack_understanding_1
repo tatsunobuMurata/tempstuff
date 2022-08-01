@@ -113,13 +113,16 @@ index=_introspection host=sh* sourcetype=splunk_resource_usage component=PerProc
 
 <011 - search schedule> <share the csv with us>
 
-index=_internal source=*scheduler.log sourcetype=scheduler SavedSplunker status!=delegated_* earliest=-w@w+1d latest=-w@w+2d
+index=_internal host=sh* source=*scheduler.log sourcetype=scheduler SavedSplunker status!=delegated_* earliest=-7d@d latest=@d 
+| sort 0 app savedsearch_name _time
+| streamstats window=1 current=f reset_on_change=t last(scheduled_time) as prev_scheduled_time by app savedsearch_name
 | eval lag_time = dispatch_time - scheduled_time 
-| stats count as total_count count(eval(status="success")) as success_count count(eval(status="skipped")) as skipped_count count(eval(status="continued")) AS continued_count max(run_time) p90(run_time) p50(run_time) min(run_time) max(lag_time) p90(lag_time) p50(lag_time) min(lag_time) earliest(lag_time) latest(lag_time) by host app savedsearch_name user 
+| eval act_interval = scheduled_time - prev_scheduled_time
+| stats count as total_count count(eval(status="success")) as success_count count(eval(status="skipped")) as skipped_count count(eval(status="continued")) AS continued_count min(act_interval) as act_interval max(run_time) p90(run_time) p50(run_time) min(run_time) sum(run_time) max(lag_time) p90(lag_time) p50(lag_time) min(lag_time) earliest(lag_time) latest(lag_time) by host app savedsearch_name user 
 | join type=left app savedsearch_name 
     [ rest splunk_server=local "/servicesNS/-/-/saved/searches/" search="is_scheduled=1" search="disabled=0" 
-    | fields title, eai:acl.app, eai:acl.owner, cron_schedule, realtime_schedule durable.* dispatch.earliest_time, dispatch.latest_time, schedule_window, actions 
-    | rename title as savedsearch_name eai:acl.* as * dispatch.* as * durable.* as durable_* cron_schedule as cron ] 
+    | fields title, eai:acl.app, eai:acl.owner, cron_schedule, realtime_schedule durable.* dispatch.earliest_time, dispatch.latest_time, schedule_window, allow_skew, actions, schedule_priority, dispatch.ttl, auto_summarize action.summary_index
+    | rename title as savedsearch_name eai:acl.* as * dispatch.* as dispatch_* durable.* as durable_* action.* as action_* cron_schedule as cron ] 
 | rex field=cron "^(?<cron_m>\S+)\s+(?<cron_h>\S+)\s+(?<cron_date>\S+)\s+(?<cron_month>\S+)\s+(?<cron_dow>\S+)" 
 | rex field=cron_dow max_match=0 "(?<cron_dow_at>\d+)" 
 | rex field=cron_month max_match=0 "(?<cron_month_at>\d+)" 
@@ -138,8 +141,8 @@ index=_internal source=*scheduler.log sourcetype=scheduler SavedSplunker status!
 | eval period = info_max_time - info_min_time 
 | eval interval = if(isnull(interval), ceil(period / total_count / 60) * 60, interval) 
 | eval interval_fill = round(('max(run_time)' / interval) , 2) 
-| eval run_at = case(cron_m="*", "run_every_1", isnotnull(cron_m_every), "run_every_".cron_m_every, isnum(cron_m_at), "run_at_".(cron_m_at - 0), 1=1, cron_m) 
-| eval run_at = if(isnull(run_at), if(interval >= 3600, "run_at_0", "run_every_".(interval/60)), run_at) 
-| fields host app savedsearch_name user cron run_at interval max(run_time) interval_fill total_count success_count skipped_count continued_count max(lag_time) earliest(lag_time) latest(lag_time) dispatch_earliest_time dispatch_latest_time realtime_schedule schedule_priority schedule_window allow_skew workload_pool dispatch_ttl durable_* auto_summarize action_summary_index 
+| eval cron_run = case(cron_m="*", "run_every_1", isnotnull(cron_m_every), "run_every_".cron_m_every, isnum(cron_m_at), "run_at_".(cron_m_at - 0), 1=1, cron_m) 
+| eval cron_run = if(isnull(cron_run), if(interval >= 3600, "run_at_0", "run_every_".(interval/60)), cron_run) 
+| fields host app savedsearch_name user cron cron_run interval act_interval max(run_time) p90(run_time) p50(run_time) min(run_time) sum(run_time) interval_fill total_count success_count skipped_count continued_count max(lag_time) earliest(lag_time) latest(lag_time) dispatch_earliest_time dispatch_latest_time realtime_schedule schedule_priority schedule_window allow_skew workload_pool dispatch_ttl durable_* auto_summarize action_summary_index 
 | sort 0 - interval_fill
 
